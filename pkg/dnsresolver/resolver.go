@@ -22,11 +22,11 @@ type dnsLive struct {
 	cache    *dnsCache
 }
 
-func NewResolverLive(filename string) *dnsLive {
+func NewResolverLive(filename string) (*dnsLive, error) {
 	// Does live DNS lookups. Records them. Writes file on Close.
 	c := &dnsLive{filename: filename}
 	c.cache = &dnsCache{m: map[string]map[string][]string{}}
-	return c
+	return c, nil
 }
 
 func (c *dnsLive) GetTxt(label string) ([]string, error) {
@@ -45,11 +45,11 @@ func (c *dnsLive) GetTxt(label string) ([]string, error) {
 	return t, err
 }
 
-func (c *dnsLive) Close() {
+func (c *dnsLive) Close() error {
 	// Write out and close the file.
 	m, _ := json.MarshalIndent(c.cache, "", "  ")
 	m = append(m, "\n"...)
-	ioutil.WriteFile(c.filename, m, 0666)
+	return ioutil.WriteFile(c.filename, m, 0666)
 }
 
 // The "Pre-Cached DNS" Resolver:

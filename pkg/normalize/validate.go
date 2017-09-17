@@ -6,11 +6,13 @@ import (
 	"strings"
 
 	"github.com/StackExchange/dnscontrol/models"
+	"github.com/StackExchange/dnscontrol/pkg/dnsresolver"
 	"github.com/StackExchange/dnscontrol/pkg/transform"
 	"github.com/StackExchange/dnscontrol/providers"
 	"github.com/miekg/dns"
 	"github.com/miekg/dns/dnsutil"
 	"github.com/pkg/errors"
+	"github.com/whs/dnscontrol/pkg/spflib"
 )
 
 // Returns false if target does not validate.
@@ -314,15 +316,15 @@ func NormalizeAndValidateConfig(config *models.DNSConfig) (errs []error) {
 		}
 	}
 
-	// SPF flattening
-	for _, domain := range config.Domains {
-		if hasSpfRecords(domain.Records) {
-			err := flattenSpf(domain)
-			if err != nil {
-				errs = append(errs, err)
-			}
-		}
-	}
+	// // SPF flattening
+	// for _, domain := range config.Domains {
+	// 	if hasSpfRecords(domain.Records) {
+	// 		err := flattenSpf(domain)
+	// 		if err != nil {
+	// 			errs = append(errs, err)
+	// 		}
+	// 	}
+	// }
 
 	// Process IMPORT_TRANSFORM
 	for _, domain := range config.Domains {
@@ -364,6 +366,45 @@ func NormalizeAndValidateConfig(config *models.DNSConfig) (errs []error) {
 		}
 	}
 
+	// Check all SPF records are 10 or fewer lookups.
+	dnsres, err := dnsresolver.NewResolverLive("cache-dns.json")
+	defer dnsres.Close()
+	if err != nil {
+		errs = append(errs, err)
+	} else {
+		for _, d := range config.Domains {
+			errs = append(errs, checkSPFLookups(d, dnsres)...)
+		}
+	}
+
+	return errs
+}
+
+func checkSPFLookups(dc *models.DomainConfig, res dnsresolver.DnsResolver) (errs []error) {
+	spfrec := ""
+	// Find the SPF record.
+	for _, r := range dc.Records {
+		if r.Type == "TXT" && r.Name == "@" {
+			if strings.HasPrefix(r.Target, "v=spf1 ") {
+				spfrec = r.Target
+				break
+			}
+		}
+	}
+	if spfrec == "" {
+		return errs
+	}
+	// Parse the SPF record.
+	rec, err := spflib.Parse(spfrec, res)
+	if err != nil {
+		fmt.Printf("WARNING: Domain %s SPF syntax error: %s\n", dc.Name, err)
+		return errs
+	}
+	// Validate it.
+	if rec.Lookups > 10 {
+		fmt.Printf("WARNING: Domain %s SPF has %d (>10) lookups\n", dc.Name, rec.Lookups)
+		// errs = append(errs, fmt.Errorf("Domain %s SPF has %d (>10) lookups", dc.Name, rec.Lookups))
+	}
 	return errs
 }
 
