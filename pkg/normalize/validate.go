@@ -316,15 +316,10 @@ func NormalizeAndValidateConfig(config *models.DNSConfig) (errs []error) {
 		}
 	}
 
-	// // SPF flattening
-	// for _, domain := range config.Domains {
-	// 	if hasSpfRecords(domain.Records) {
-	// 		err := flattenSpf(domain)
-	// 		if err != nil {
-	// 			errs = append(errs, err)
-	// 		}
-	// 	}
-	// }
+	// SPF flattening
+	if ers := flattenSPFs(config); len(ers) > 0 {
+		errs = append(errs, ers...)
+	}
 
 	// Process IMPORT_TRANSFORM
 	for _, domain := range config.Domains {
